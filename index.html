@@ -3,9 +3,489 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live Dangerously</title>
+  <title>Fantasy Climate Map Generator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f1117;
+      color: #d0d4e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      padding: 12px 16px 28px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 1.3rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: #7ab8d8;
+      margin-bottom: 12px;
+    }
+
+    /* ── Toolbar ─────────────────────────────────────────────────────── */
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .btn-group {
+      display: flex;
+      background: #1c2030;
+      border: 1px solid #2e3448;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .btn-group button {
+      border: none;
+      border-right: 1px solid #2e3448;
+      background: transparent;
+      color: #9aa0b4;
+      padding: 7px 14px;
+      cursor: pointer;
+      font-size: 0.83rem;
+      transition: background 0.12s, color 0.12s;
+    }
+    .btn-group button:last-child { border-right: none; }
+    .btn-group button:hover { background: #252a3c; color: #d0d4e0; }
+    .btn-group button.active { background: #2e5080; color: #fff; }
+
+    .divider { width: 1px; height: 34px; background: #2e3448; }
+
+    button.action {
+      border: 1px solid #2e3448;
+      background: #1c2030;
+      color: #9aa0b4;
+      padding: 7px 15px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.83rem;
+      transition: background 0.12s;
+    }
+    button.action:hover { background: #252a3c; color: #d0d4e0; }
+    button.action.primary {
+      background: #1a3d28;
+      color: #7dcc90;
+      border-color: #2e6840;
+      font-weight: 600;
+    }
+    button.action.primary:hover { background: #224d30; }
+
+    /* ── Map ──────────────────────────────────────────────────────────── */
+    .map-scroll {
+      overflow-x: auto;
+      border: 2px solid #2a2e40;
+      border-radius: 4px;
+      display: inline-block;
+      max-width: 100%;
+    }
+
+    #map-canvas {
+      display: block;
+      cursor: crosshair;
+      image-rendering: pixelated;
+    }
+
+    /* ── Bottom bar ───────────────────────────────────────────────────── */
+    .bottom-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 28px;
+      margin-top: 12px;
+      align-items: flex-start;
+    }
+
+    .panel-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #5a6070;
+      margin-bottom: 8px;
+    }
+
+    .legend-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 4px 16px;
+      max-width: 740px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: #b0b4c0;
+      transition: opacity 0.2s;
+    }
+    .legend-item.dim { opacity: 0.28; }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+      border: 1px solid rgba(255,255,255,0.08);
+      flex-shrink: 0;
+    }
+
+    .overlays label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.83rem;
+      color: #b0b4c0;
+      cursor: pointer;
+      margin-bottom: 6px;
+      user-select: none;
+    }
+    .overlays input[type=checkbox] { accent-color: #4a80c0; }
+  </style>
 </head>
 <body>
-  <h1>Hello world!</h1>
+
+<h1>Fantasy Climate Map Generator</h1>
+
+<div class="toolbar">
+  <div class="btn-group" id="tool-group">
+    <button id="btn-land"     onclick="setTool('land')"     class="active">Land</button>
+    <button id="btn-water"    onclick="setTool('water')"              >Water</button>
+    <button id="btn-mountain" onclick="setTool('mountain')"           >Mountain</button>
+    <button id="btn-erase"    onclick="setTool('erase')"              >Erase</button>
+  </div>
+
+  <div class="btn-group" id="brush-group">
+    <button id="btn-s" onclick="setBrush('s')" class="active">S</button>
+    <button id="btn-m" onclick="setBrush('m')"              >M</button>
+    <button id="btn-l" onclick="setBrush('l')"              >L</button>
+  </div>
+
+  <div class="divider"></div>
+
+  <button class="action primary" onclick="generateBiomes()">Generate Biomes</button>
+  <button class="action"         onclick="clearMap()">Clear Map</button>
+</div>
+
+<div class="map-scroll">
+  <canvas id="map-canvas"></canvas>
+</div>
+
+<div class="bottom-bar">
+  <div>
+    <div class="panel-title">Legend</div>
+    <div class="legend-grid" id="legend"></div>
+  </div>
+
+  <div>
+    <div class="panel-title">Overlays</div>
+    <div class="overlays">
+      <label>
+        <input type="checkbox" id="chk-lat" onchange="render()">
+        Latitude lines
+      </label>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Constants ────────────────────────────────────────────────────────────────
+const ROWS = 72;   // 2.5° per row  (72 × 2.5 = 180°)
+const COLS = 144;  // 2.5° per col  (144 × 2.5 = 360°)
+const CELL = 8;    // px per cell
+
+// ── State ─────────────────────────────────────────────────────────────────────
+// 0 = ocean, 1 = land, 2 = mountain
+const grid     = Array.from({ length: ROWS }, () => new Uint8Array(COLS));
+let biomeGrid  = null;   // string[ROWS][COLS], set after "Generate Biomes"
+
+let currentTool = 'land';
+let brushRadius  = 0;    // cells; S=0, M=2, L=4
+let isPainting   = false;
+
+// ── Biome lookup ─────────────────────────────────────────────────────────────
+// temp index:     0=hot(0-20) 1=warm(20-40) 2=cool(40-60) 3=cold(60-75) 4=polar(75-90)
+// moisture index: 0=very_dry  1=dry  2=moderate  3=wet  4=very_wet
+
+const BIOME_TABLE = [
+//  v_dry           dry            moderate          wet                    very_wet
+  ['desert',        'savanna',     'savanna',        'tropical_forest',     'rainforest'           ], // hot
+  ['desert',        'shrubland',   'grassland',      'deciduous_forest',    'temperate_rainforest' ], // warm
+  ['cold_desert',   'steppe',      'boreal_forest',  'boreal_forest',       'temperate_rainforest' ], // cool
+  ['tundra',        'tundra',      'taiga',          'taiga',               'taiga'                ], // cold
+  ['ice_cap',       'ice_cap',     'ice_cap',        'ice_cap',             'ice_cap'              ], // polar
+];
+
+const BIOME_COLORS = {
+  ocean:                '#1a5e90',
+  desert:               '#f0d888',
+  savanna:              '#c8b840',
+  tropical_forest:      '#2a9020',
+  rainforest:           '#0a6800',
+  shrubland:            '#8a9848',
+  grassland:            '#7cc840',
+  deciduous_forest:     '#4a8030',
+  temperate_rainforest: '#2a7850',
+  cold_desert:          '#bab8a0',
+  steppe:               '#c8b86a',
+  boreal_forest:        '#387060',
+  tundra:               '#9aaa80',
+  taiga:                '#2c5840',
+  ice_cap:              '#daf0f8',
+  // raw terrain (no biomes generated yet)
+  _land:     '#5a8840',
+  _mountain: '#857060',
+};
+
+const BIOME_NAMES = {
+  ocean:                'Ocean',
+  desert:               'Desert',
+  savanna:              'Savanna',
+  tropical_forest:      'Tropical Forest',
+  rainforest:           'Rainforest',
+  shrubland:            'Shrubland',
+  grassland:            'Grassland',
+  deciduous_forest:     'Deciduous Forest',
+  temperate_rainforest: 'Temperate Rainforest',
+  cold_desert:          'Cold Desert',
+  steppe:               'Steppe',
+  boreal_forest:        'Boreal Forest',
+  tundra:               'Tundra',
+  taiga:                'Taiga',
+  ice_cap:              'Ice Cap',
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function rowToLat(r) {
+  // center of row r in degrees N (positive = north)
+  return 90 - (r + 0.5) * (180 / ROWS);
+}
+
+function tempIndex(absLat) {
+  if (absLat <= 20) return 0;
+  if (absLat <= 40) return 1;
+  if (absLat <= 60) return 2;
+  if (absLat <= 75) return 3;
+  return 4;
+}
+
+function baseMoisture(absLat) {
+  if (absLat <= 10) return 4;  // ITCZ – very wet
+  if (absLat <= 30) return 0;  // Subtropical high – very dry
+  if (absLat <= 60) return 2;  // Westerlies – moderate
+  if (absLat <= 75) return 3;  // Subpolar low – wet
+  return 0;                     // Polar high – very dry
+}
+
+// ── Canvas setup ──────────────────────────────────────────────────────────────
+const canvas = document.getElementById('map-canvas');
+const ctx    = canvas.getContext('2d');
+canvas.width  = COLS * CELL;
+canvas.height = ROWS * CELL;
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+  // 1. Cells
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const t = grid[r][c];
+      let color;
+      if (t === 0) {
+        color = BIOME_COLORS.ocean;
+      } else if (biomeGrid) {
+        color = BIOME_COLORS[biomeGrid[r][c]] || '#888';
+      } else {
+        color = t === 2 ? BIOME_COLORS._mountain : BIOME_COLORS._land;
+      }
+      ctx.fillStyle = color;
+      ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+    }
+  }
+
+  // 2. Mountain icons
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c] === 2) drawMountain(r, c);
+    }
+  }
+
+  // 3. Overlays
+  if (document.getElementById('chk-lat').checked) drawLatLines();
+}
+
+function drawMountain(r, c) {
+  const x = c * CELL, y = r * CELL;
+  const w = CELL - 1, h = CELL - 1;
+  ctx.fillStyle = '#4e4232';
+  ctx.beginPath();
+  ctx.moveTo(x + w / 2, y + 1);
+  ctx.lineTo(x + w,     y + h);
+  ctx.lineTo(x,         y + h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
+  ctx.beginPath();
+  ctx.moveTo(x + w / 2,         y + 1);
+  ctx.lineTo(x + w / 2 + w / 6, y + h * 0.38);
+  ctx.lineTo(x + w / 2 - w / 6, y + h * 0.38);
+  ctx.closePath();
+  ctx.fill();
+}
+
+const LAT_MARKS = [
+  { lat:  75, label: '75°N', style: 'normal'  },
+  { lat:  60, label: '60°N', style: 'normal'  },
+  { lat:  30, label: '30°N', style: 'normal'  },
+  { lat:  10, label: '10°N', style: 'dashed'  },
+  { lat:   0, label: 'Equator',   style: 'equator' },
+  { lat: -10, label: '10°S', style: 'dashed'  },
+  { lat: -30, label: '30°S', style: 'normal'  },
+  { lat: -60, label: '60°S', style: 'normal'  },
+  { lat: -75, label: '75°S', style: 'normal'  },
+];
+
+function drawLatLines() {
+  ctx.save();
+  ctx.font = '9px monospace';
+  ctx.textBaseline = 'bottom';
+  for (const { lat, label, style } of LAT_MARKS) {
+    const y = (90 - lat) / 180 * canvas.height;
+    if (style === 'equator') {
+      ctx.strokeStyle = 'rgba(255,80,80,0.65)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([]);
+    } else if (style === 'dashed') {
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 4]);
+    } else {
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([]);
+    }
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+    ctx.stroke();
+    ctx.fillStyle = style === 'equator'
+      ? 'rgba(255,120,120,0.9)'
+      : 'rgba(255,255,255,0.7)';
+    ctx.fillText(label, 4, y - 2);
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// ── Biome generation (Stage 1: latitude only) ─────────────────────────────────
+function generateBiomes() {
+  biomeGrid = Array.from({ length: ROWS }, () => new Array(COLS).fill('ocean'));
+  for (let r = 0; r < ROWS; r++) {
+    const absLat = Math.abs(rowToLat(r));
+    const ti = tempIndex(absLat);
+    const mi = baseMoisture(absLat);
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c] !== 0) {
+        biomeGrid[r][c] = BIOME_TABLE[ti][mi];
+      }
+    }
+  }
+  render();
+  buildLegend();
+}
+
+// ── Legend ────────────────────────────────────────────────────────────────────
+function buildLegend() {
+  const used = new Set();
+  if (biomeGrid) {
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        used.add(biomeGrid[r][c]);
+  }
+  const el = document.getElementById('legend');
+  el.innerHTML = Object.entries(BIOME_NAMES).map(([key, name]) => {
+    const dim = biomeGrid && !used.has(key) ? ' dim' : '';
+    return `<div class="legend-item${dim}">
+      <div class="swatch" style="background:${BIOME_COLORS[key]}"></div>
+      <span>${name}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Painting ──────────────────────────────────────────────────────────────────
+function paintAt(r, c) {
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+  const t = currentTool;
+  grid[r][c] = t === 'land' ? 1 : t === 'mountain' ? 2 : 0;
+}
+
+function applyBrush(row, col) {
+  if (brushRadius === 0) {
+    paintAt(row, col);
+  } else {
+    const br = brushRadius;
+    for (let dr = -br; dr <= br; dr++) {
+      for (let dc = -br; dc <= br; dc++) {
+        if (dr * dr + dc * dc <= br * br) paintAt(row + dr, col + dc);
+      }
+    }
+  }
+  biomeGrid = null;
+  render();
+}
+
+function cellAt(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    r: Math.floor((e.clientY - rect.top)  / CELL),
+    c: Math.floor((e.clientX - rect.left) / CELL),
+  };
+}
+
+canvas.addEventListener('mousedown', e => {
+  e.preventDefault();
+  isPainting = true;
+  const { r, c } = cellAt(e);
+  applyBrush(r, c);
+});
+canvas.addEventListener('mousemove', e => {
+  if (!isPainting) return;
+  const { r, c } = cellAt(e);
+  applyBrush(r, c);
+});
+window.addEventListener('mouseup',    () => { isPainting = false; });
+canvas.addEventListener('mouseleave', () => { isPainting = false; });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ── Tool / brush controls ─────────────────────────────────────────────────────
+const TOOLS   = ['land', 'water', 'mountain', 'erase'];
+const BRUSHES = { s: 0, m: 2, l: 4 };
+
+function setTool(tool) {
+  currentTool = tool;
+  TOOLS.forEach(t =>
+    document.getElementById('btn-' + t).classList.toggle('active', t === tool)
+  );
+}
+
+function setBrush(size) {
+  brushRadius = BRUSHES[size];
+  Object.keys(BRUSHES).forEach(s =>
+    document.getElementById('btn-' + s).classList.toggle('active', s === size)
+  );
+}
+
+function clearMap() {
+  for (const row of grid) row.fill(0);
+  biomeGrid = null;
+  render();
+  buildLegend();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+buildLegend();
+render();
+</script>
 </body>
 </html>
