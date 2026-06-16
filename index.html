@@ -183,6 +183,12 @@
 
   <button class="action primary" onclick="generateBiomes()">Generate Biomes</button>
   <button class="action"         onclick="clearMap()">Clear Map</button>
+
+  <div class="divider"></div>
+
+  <button class="action" onclick="exportPNG()">Export PNG</button>
+  <button class="action" onclick="saveMap()">Save</button>
+  <button class="action" onclick="loadMap()">Load</button>
 </div>
 
 <div id="tooltip"></div>
@@ -694,6 +700,90 @@ function clearMap() {
   moistureGrid = null;
   render();
   buildLegend();
+}
+
+// ── Export PNG ────────────────────────────────────────────────────────────────
+function exportPNG() {
+  // Re-render without overlays for a clean export, then restore
+  const latOn   = document.getElementById('chk-lat').checked;
+  const windOn  = document.getElementById('chk-wind').checked;
+  const moistOn = document.getElementById('chk-moist').checked;
+  document.getElementById('chk-lat').checked   = false;
+  document.getElementById('chk-wind').checked  = false;
+  document.getElementById('chk-moist').checked = false;
+  render();
+
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href     = url;
+    a.download = 'climate-map.png';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    // Restore overlays
+    document.getElementById('chk-lat').checked   = latOn;
+    document.getElementById('chk-wind').checked  = windOn;
+    document.getElementById('chk-moist').checked = moistOn;
+    render();
+  }, 'image/png');
+}
+
+// ── Save / Load (localStorage) ────────────────────────────────────────────────
+const SAVE_KEY = 'fantasy-climate-map-v1';
+
+function saveMap() {
+  // Pack grid into a compact string: each cell is one char (0/1/2)
+  const flat = [];
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      flat.push(grid[r][c]);
+  const data = { rows: ROWS, cols: COLS, grid: flat.join('') };
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    flashMsg('Map saved!');
+  } catch (e) {
+    flashMsg('Save failed (storage full?)');
+  }
+}
+
+function loadMap() {
+  const raw = localStorage.getItem(SAVE_KEY);
+  if (!raw) { flashMsg('No saved map found.'); return; }
+  try {
+    const data = JSON.parse(raw);
+    if (data.rows !== ROWS || data.cols !== COLS) {
+      flashMsg('Saved map has different dimensions — cannot load.');
+      return;
+    }
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        grid[r][c] = Number(data.grid[r * COLS + c]) || 0;
+    biomeGrid    = null;
+    moistureGrid = null;
+    render();
+    buildLegend();
+    flashMsg('Map loaded!');
+  } catch (e) {
+    flashMsg('Load failed — saved data corrupt.');
+  }
+}
+
+function flashMsg(msg) {
+  const el = document.createElement('div');
+  el.textContent = msg;
+  Object.assign(el.style, {
+    position: 'fixed', bottom: '20px', left: '50%',
+    transform: 'translateX(-50%)',
+    background: 'rgba(10,14,24,0.92)', color: '#9dd',
+    border: '1px solid #3a5060', borderRadius: '6px',
+    padding: '8px 18px', fontSize: '0.85rem',
+    zIndex: '500', pointerEvents: 'none',
+    transition: 'opacity 0.5s',
+  });
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; }, 1600);
+  setTimeout(() => el.remove(), 2200);
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
