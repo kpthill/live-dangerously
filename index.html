@@ -199,7 +199,8 @@ const CELL = 8;    // px per cell
 // ── State ─────────────────────────────────────────────────────────────────────
 // 0 = ocean, 1 = land, 2 = mountain
 const grid     = Array.from({ length: ROWS }, () => new Uint8Array(COLS));
-let biomeGrid  = null;   // string[ROWS][COLS], set after "Generate Biomes"
+let biomeGrid    = null;   // string[ROWS][COLS], set after "Generate Biomes"
+let moistureGrid = null;   // Float32Array[ROWS][COLS], moisture 0–4
 
 let currentTool = 'land';
 let brushRadius  = 0;    // cells; S=0, M=2, L=4
@@ -277,6 +278,54 @@ function baseMoisture(absLat) {
   if (absLat <= 60) return 2;  // Westerlies – moderate
   if (absLat <= 75) return 3;  // Subpolar low – wet
   return 0;                     // Polar high – very dry
+}
+
+// ── Wind direction ────────────────────────────────────────────────────────────
+// Returns column step: +1 = blows eastward (westerlies), -1 = blows westward
+function windDir(r) {
+  const a = Math.abs(rowToLat(r));
+  if (a <= 30) return -1;  // trade winds – westward
+  if (a <= 60) return  1;  // westerlies  – eastward
+  return -1;               // polar easterlies – westward
+}
+
+// ── Coast distance (BFS from every ocean cell) ───────────────────────────────
+function computeCoastDist() {
+  const dist  = Array.from({ length: ROWS }, () => new Uint16Array(COLS).fill(9999));
+  const queue = [];
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (grid[r][c] === 0) { dist[r][c] = 0; queue.push(r * COLS + c); }
+  const DIRS = [[-1,0],[1,0],[0,-1],[0,1]];
+  for (let i = 0; i < queue.length; i++) {
+    const idx = queue[i], r = (idx / COLS) | 0, c = idx % COLS, d = dist[r][c];
+    for (const [dr, dc] of DIRS) {
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && dist[nr][nc] === 9999) {
+        dist[nr][nc] = d + 1;
+        queue.push(nr * COLS + nc);
+      }
+    }
+  }
+  return dist;
+}
+
+// ── Rain shadow (applied per row in wind direction) ───────────────────────────
+function applyRainShadow(r, moistRow) {
+  const dc = windDir(r);
+  const start = dc === 1 ? 0 : COLS - 1;
+  const end   = dc === 1 ? COLS : -1;
+  let shadow = 0;
+  for (let c = start; c !== end; c += dc) {
+    if (grid[r][c] === 0) {
+      shadow = 0;                          // ocean – reset
+    } else if (grid[r][c] === 2) {
+      shadow = Math.max(shadow, 2.5);      // mountain – activate/refresh shadow
+    } else {
+      moistRow[c] -= shadow;
+      shadow = Math.max(0, shadow - 0.35); // decay ~7 cells
+    }
+  }
 }
 
 // ── Canvas setup ──────────────────────────────────────────────────────────────
@@ -378,19 +427,44 @@ function drawLatLines() {
   ctx.restore();
 }
 
-// ── Biome generation (Stage 1: latitude only) ─────────────────────────────────
+// ── Biome generation (Stage 2: latitude + coastal bonus + rain shadow) ─────────
 function generateBiomes() {
+  const coastDist = computeCoastDist();
+
+  // Start with latitude base moisture per row
+  const moist = Array.from({ length: ROWS }, (_, r) => {
+    const bm = baseMoisture(Math.abs(rowToLat(r)));
+    return new Float32Array(COLS).fill(bm);
+  });
+
+  // Coastal bonus: exponential decay from nearest ocean cell
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const d = coastDist[r][c];
+      if (d > 0) moist[r][c] += 1.5 * Math.exp(-0.5 * (d - 1));
+    }
+  }
+
+  // Rain shadow from mountains
+  for (let r = 0; r < ROWS; r++) applyRainShadow(r, moist[r]);
+
+  // Clamp and store moisture for overlay use in Stage 3
+  moistureGrid = moist.map(row =>
+    Float32Array.from(row, v => Math.max(0, Math.min(4, v)))
+  );
+
+  // Assign biomes
   biomeGrid = Array.from({ length: ROWS }, () => new Array(COLS).fill('ocean'));
   for (let r = 0; r < ROWS; r++) {
-    const absLat = Math.abs(rowToLat(r));
-    const ti = tempIndex(absLat);
-    const mi = baseMoisture(absLat);
+    const ti = tempIndex(Math.abs(rowToLat(r)));
     for (let c = 0; c < COLS; c++) {
       if (grid[r][c] !== 0) {
+        const mi = Math.min(4, Math.max(0, Math.round(moistureGrid[r][c])));
         biomeGrid[r][c] = BIOME_TABLE[ti][mi];
       }
     }
   }
+
   render();
   buildLegend();
 }
@@ -478,7 +552,8 @@ function setBrush(size) {
 
 function clearMap() {
   for (const row of grid) row.fill(0);
-  biomeGrid = null;
+  biomeGrid    = null;
+  moistureGrid = null;
   render();
   buildLegend();
 }
