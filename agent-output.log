@@ -7,3 +7,26 @@ All four stages are implemented and pushed. Here's a summary of what was built:
 **Stage 3** — Wind arrows overlay (direction reflects trade winds/westerlies/polar), moisture intensity overlay (blue tint proportional to wetness), hover tooltip (lat, terrain, temp, moisture, biome), and mountain auto-fill that places a 2-cell radius of land underneath when painting on ocean.
 
 **Stage 4** — Export PNG (renders without overlays then downloads), Save to localStorage (compact cell-type string), Load from localStorage (with dimension guard), flash message feedback.
+
+────────────────────────────────────────────────────────────────────────────
+**AutoBiomes algorithm implementation** (paper: Fischer et al., The Visual Computer 2020)
+
+Replaced the latitude-band heuristics with the paper's genuine grid-based climate
+simulation (§3.2). Extracted the PDF text, prototyped + tuned the core in Node against a
+synthetic continent until rain shadows / coastal gradients looked plausible, then
+transcribed into index.html and validated end-to-end under a stub DOM.
+
+Pipeline (cells → elevation → temperature → wind → precipitation → biomes):
+- Elevation field from painted terrain (smoothed peaks, ocean at sea level).
+- Temperature: sine latitude gradient OR bilinear corners, both with height falloff.
+- Wind: simplified semi-Lagrangian vector field — bilinear corner forcing, self-advection
+  backtrace, nearest-corner persistence, seeded turbulence (diffusion/pressure dropped).
+- Precipitation: iterative moisture transport — temperature-dependent evaporation from
+  water, downwind advection (main + two shoulder cells), two-step rain (orographic ΔT
+  during transport → rain shadows, plus local convective).
+- Biomes: discretized 6×6 Whittaker lookup (temperature × precipitation).
+
+UI: collapsible Climate Parameters panel grouped by pipeline step (live, seeded sliders);
+View selector for per-step visualization (Biomes / Temperature / Precipitation / Elevation)
+with colour-ramp legend; wind-field + latitude overlays; tooltip with elevation/temp/precip/
+biome; example map; PNG export; save/load of terrain AND parameters. Spec: _spec/autobiomes.md.

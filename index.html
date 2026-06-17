@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fantasy Climate Map Generator</title>
+  <title>AutoBiomes — Procedural Climate &amp; Biome Generator</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -18,10 +18,17 @@
       text-align: center;
       font-size: 1.3rem;
       font-weight: 600;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.04em;
       color: #7ab8d8;
-      margin-bottom: 12px;
+      margin-bottom: 2px;
     }
+    .subtitle {
+      text-align: center;
+      font-size: 0.74rem;
+      color: #5a6070;
+      margin-bottom: 14px;
+    }
+    .subtitle a { color: #6a90b0; }
 
     /* ── Toolbar ─────────────────────────────────────────────────────── */
     .toolbar {
@@ -75,6 +82,52 @@
     }
     button.action.primary:hover { background: #224d30; }
 
+    label.seg-label { font-size: 0.78rem; color: #7a8090; margin-right: 2px; }
+
+    /* ── Climate parameter panel ─────────────────────────────────────── */
+    #params-panel {
+      display: none;
+      background: #161a26;
+      border: 1px solid #2a2e40;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    #params-panel.open { display: block; }
+    .param-groups {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+      gap: 8px 26px;
+    }
+    .pgroup-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #6fa0c0;
+      margin: 6px 0 8px;
+      border-bottom: 1px solid #242a3a;
+      padding-bottom: 4px;
+    }
+    .pgroup-title small { color: #4a5060; text-transform: none; letter-spacing: 0; font-size: 0.86em; }
+    .ctrl {
+      display: grid;
+      grid-template-columns: 118px 1fr 46px;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 0.78rem;
+      color: #aab0c0;
+    }
+    .ctrl > span.lbl { color: #8a90a0; }
+    .ctrl input[type=range] { width: 100%; accent-color: #4a80c0; }
+    .ctrl .val { text-align: right; color: #cfe0f0; font-variant-numeric: tabular-nums; font-size: 0.76rem; }
+    .ctrl select, .ctrl input[type=number] {
+      grid-column: 2 / 4;
+      background: #1c2030; color: #cfe0f0;
+      border: 1px solid #2e3448; border-radius: 4px;
+      padding: 3px 6px; font-size: 0.78rem;
+    }
+
     /* ── Map ──────────────────────────────────────────────────────────── */
     .map-scroll {
       overflow-x: auto;
@@ -109,9 +162,9 @@
 
     .legend-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(186px, 1fr));
       gap: 4px 16px;
-      max-width: 740px;
+      max-width: 800px;
     }
 
     .legend-item {
@@ -122,7 +175,7 @@
       color: #b0b4c0;
       transition: opacity 0.2s;
     }
-    .legend-item.dim { opacity: 0.28; }
+    .legend-item.dim { opacity: 0.26; }
 
     .swatch {
       width: 14px;
@@ -159,11 +212,18 @@
       white-space: nowrap;
     }
     #tooltip b { color: #8abcde; font-weight: 500; }
+
+    .ramp-bar { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: #7a8090; margin-top: 4px; }
+    .ramp { width: 150px; height: 11px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.1); }
   </style>
 </head>
 <body>
 
-<h1>Fantasy Climate Map Generator</h1>
+<h1>AutoBiomes</h1>
+<div class="subtitle">
+  Procedural multi-biome climate simulation — temperature → wind → precipitation → Whittaker classification.
+  After Fischer, Dittmann, Weller &amp; Zachmann, <i>The Visual Computer</i> (2020).
+</div>
 
 <div class="toolbar">
   <div class="btn-group" id="tool-group">
@@ -182,13 +242,30 @@
   <div class="divider"></div>
 
   <button class="action primary" onclick="generateBiomes()">Generate Biomes</button>
-  <button class="action"         onclick="clearMap()">Clear Map</button>
+  <button class="action" onclick="toggleParams()" id="btn-params">Climate Parameters ▾</button>
+  <button class="action" onclick="exampleMap()">Example Map</button>
+  <button class="action" onclick="clearMap()">Clear</button>
 
   <div class="divider"></div>
 
   <button class="action" onclick="exportPNG()">Export PNG</button>
   <button class="action" onclick="saveMap()">Save</button>
   <button class="action" onclick="loadMap()">Load</button>
+</div>
+
+<div id="params-panel">
+  <div class="param-groups" id="param-groups"></div>
+</div>
+
+<div class="toolbar">
+  <label class="seg-label">View:</label>
+  <div class="btn-group" id="view-group">
+    <button id="view-biomes"  onclick="setView('biomes')" class="active">Biomes</button>
+    <button id="view-temp"    onclick="setView('temp')"            >Temperature</button>
+    <button id="view-precip"  onclick="setView('precip')"          >Precipitation</button>
+    <button id="view-elev"    onclick="setView('elev')"            >Elevation</button>
+  </div>
+  <div class="ramp-bar" id="ramp-bar"></div>
 </div>
 
 <div id="tooltip"></div>
@@ -199,596 +276,711 @@
 
 <div class="bottom-bar">
   <div>
-    <div class="panel-title">Legend</div>
+    <div class="panel-title">Biome Legend (Whittaker)</div>
     <div class="legend-grid" id="legend"></div>
   </div>
 
   <div>
     <div class="panel-title">Overlays</div>
     <div class="overlays">
-      <label>
-        <input type="checkbox" id="chk-lat" onchange="render()">
-        Latitude lines
-      </label>
-      <label>
-        <input type="checkbox" id="chk-wind" onchange="render()">
-        Wind arrows
-      </label>
-      <label>
-        <input type="checkbox" id="chk-moist" onchange="render()">
-        Moisture overlay
-      </label>
+      <label><input type="checkbox" id="chk-lat"  onchange="render()"> Latitude lines</label>
+      <label><input type="checkbox" id="chk-wind" onchange="render()"> Wind field</label>
     </div>
   </div>
 </div>
 
 <script>
-// ── Constants ────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+//  AutoBiomes — climate-simulation pipeline (Fischer et al. 2020, §3.2)
+//  Pipeline:  elevation → temperature → wind field → precipitation → biomes
+// ══════════════════════════════════════════════════════════════════════════════
+
 const ROWS = 72;   // 2.5° per row  (72 × 2.5 = 180°)
 const COLS = 144;  // 2.5° per col  (144 × 2.5 = 360°)
 const CELL = 8;    // px per cell
 
-// ── State ─────────────────────────────────────────────────────────────────────
 // 0 = ocean, 1 = land, 2 = mountain
-const grid     = Array.from({ length: ROWS }, () => new Uint8Array(COLS));
-let biomeGrid    = null;   // string[ROWS][COLS], set after "Generate Biomes"
-let moistureGrid = null;   // Float32Array[ROWS][COLS], moisture 0–4
+const cells = Array.from({ length: ROWS }, () => new Uint8Array(COLS));
+
+// Result grids (set by generateBiomes)
+let elevGrid  = null;   // 0..1
+let tempGrid  = null;   // °C
+let precipGrid = null;  // cm/yr
+let moistGrid = null;   // residual airborne moisture (overlay/inspection)
+let windU = null, windV = null;
+let biomeGrid = null;   // string keys
 
 let currentTool = 'land';
-let brushRadius  = 0;    // cells; S=0, M=2, L=4
+let brushRadius  = 0;
 let isPainting   = false;
+let baseView     = 'biomes';
 
-// ── Biome lookup ─────────────────────────────────────────────────────────────
-// temp index:     0=hot(0-20) 1=warm(20-40) 2=cool(40-60) 3=cold(60-75) 4=polar(75-90)
-// moisture index: 0=very_dry  1=dry  2=moderate  3=wet  4=very_wet
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function rowToLat(r) { return 90 - (r + 0.5) * (180 / ROWS); }
+function grid2d(fill = 0) { return Array.from({ length: ROWS }, () => new Float32Array(COLS).fill(fill)); }
+const wrapC   = c => ((c % COLS) + COLS) % COLS;
+const clampR  = r => r < 0 ? 0 : r >= ROWS ? ROWS - 1 : r;
+const lerp    = (a, b, t) => a + (b - a) * t;
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
 
-const BIOME_TABLE = [
-//  v_dry           dry            moderate          wet                    very_wet
-  ['desert',        'savanna',     'savanna',        'tropical_forest',     'rainforest'           ], // hot
-  ['desert',        'shrubland',   'grassland',      'deciduous_forest',    'temperate_rainforest' ], // warm
-  ['cold_desert',   'steppe',      'boreal_forest',  'boreal_forest',       'temperate_rainforest' ], // cool
-  ['tundra',        'tundra',      'taiga',          'taiga',               'taiga'                ], // cold
-  ['ice_cap',       'ice_cap',     'ice_cap',        'ice_cap',             'ice_cap'              ], // polar
+function makeRng(seed) {            // mulberry32 — deterministic per seed
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ── Step 0: elevation field from painted cell types ───────────────────────────
+function computeElevation(p) {
+  let e = grid2d(0);
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      e[r][c] = cells[r][c] === 2 ? 1.0 : cells[r][c] === 1 ? 0.12 : 0.0;
+  // smooth so peaks slope into surrounding hills; ocean stays at sea level (0)
+  for (let pass = 0; pass < 2; pass++) {
+    const n = grid2d(0);
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++) {
+        if (cells[r][c] === 0) { n[r][c] = 0; continue; }
+        let sum = 0, cnt = 0;
+        for (let dr = -1; dr <= 1; dr++)
+          for (let dc = -1; dc <= 1; dc++) {
+            sum += e[clampR(r + dr)][wrapC(c + dc)]; cnt++;
+          }
+        n[r][c] = Math.max(e[r][c] * 0.5, sum / cnt);
+      }
+    e = n;
+  }
+  return e;
+}
+
+// ── Step 1: temperature (°C) — sine latitude gradient or bilinear corners ──────
+function computeTemperature(elev, p) {
+  const T = grid2d(0);
+  for (let r = 0; r < ROWS; r++) {
+    const nl = Math.abs(rowToLat(r)) / 90;
+    for (let c = 0; c < COLS; c++) {
+      let base;
+      if (p.tempMode === 'bilinear') {
+        const fx = c / (COLS - 1), fy = r / (ROWS - 1);
+        const top = lerp(p.cornerTemps[0], p.cornerTemps[1], fx);
+        const bot = lerp(p.cornerTemps[2], p.cornerTemps[3], fx);
+        base = lerp(top, bot, fy);
+      } else {
+        base = p.equatorTemp - (p.equatorTemp - p.poleTemp) * Math.sin(nl * Math.PI / 2);
+      }
+      base -= p.lapse * elev[r][c];   // height-based falloff
+      T[r][c] = base;
+    }
+  }
+  return T;
+}
+
+// ── Step 2: prevailing wind — simplified semi-Lagrangian, corner-forced ────────
+function cornerVecs(p) {
+  return p.windCorners.map(a => {
+    const rad = a * Math.PI / 180;
+    return { u: Math.cos(rad) * p.windSpeed, v: Math.sin(rad) * p.windSpeed };
+  });
+}
+function computeWind(p) {
+  const cv = cornerVecs(p);                       // [NW, NE, SW, SE]
+  let U = grid2d(0), V = grid2d(0);
+  for (let r = 0; r < ROWS; r++) {                // init: bilinear blend of corner forces
+    const fy = r / (ROWS - 1);
+    for (let c = 0; c < COLS; c++) {
+      const fx = c / (COLS - 1);
+      U[r][c] = lerp(lerp(cv[0].u, cv[1].u, fx), lerp(cv[2].u, cv[3].u, fx), fy);
+      V[r][c] = lerp(lerp(cv[0].v, cv[1].v, fx), lerp(cv[2].v, cv[3].v, fx), fy);
+    }
+  }
+  const rng = makeRng(p.seed);
+  const sample = (G, x, y) => {
+    x = wrapC(x);
+    const x0 = Math.floor(x), x1 = wrapC(x0 + 1), tx = x - Math.floor(x);
+    const y0 = clampR(Math.floor(y)), y1 = clampR(y0 + 1), ty = y - Math.floor(y);
+    return lerp(lerp(G[y0][x0], G[y0][x1], tx), lerp(G[y1][x0], G[y1][x1], tx), ty);
+  };
+  for (let it = 0; it < p.windIters; it++) {
+    const nU = grid2d(0), nV = grid2d(0);
+    for (let r = 0; r < ROWS; r++) {
+      const fy = r / (ROWS - 1);
+      for (let c = 0; c < COLS; c++) {
+        const fx = c / (COLS - 1);
+        // self-advection (backtrace one step along current wind)
+        let u = sample(U, c - U[r][c], r - V[r][c]);
+        let v = sample(V, c - U[r][c], r - V[r][c]);
+        // persistence of the nearest external (corner) force
+        const ci = (fy < 0.5 ? 0 : 2) + (fx < 0.5 ? 0 : 1);
+        u = lerp(u, cv[ci].u, p.persistence);
+        v = lerp(v, cv[ci].v, p.persistence);
+        // small random deviation (micro-disturbances)
+        const ang = (rng() - 0.5) * p.turbulence;
+        const ca = Math.cos(ang), sa = Math.sin(ang);
+        let ru = u * ca - v * sa, rv = u * sa + v * ca;
+        const m = Math.hypot(ru, rv) || 1;
+        nU[r][c] = ru / m * p.windSpeed;
+        nV[r][c] = rv / m * p.windSpeed;
+      }
+    }
+    U = nU; V = nV;
+  }
+  return { U, V };
+}
+
+// ── Step 3: precipitation — iterative moisture transport along the wind field ──
+function computePrecip(T, U, V, p) {
+  let M = grid2d(0);          // airborne moisture
+  const P = grid2d(0);        // accumulated precipitation
+  const tempNorm = t => clamp01((t + 20) / 50);
+  const evapOf = t => {
+    const tn = tempNorm(t);
+    return p.evapMode === 'exponential'
+      ? p.evapRate * (Math.exp(2 * tn) - 1) / (Math.exp(2) - 1)
+      : p.evapRate * tn;
+  };
+  for (let it = 0; it < p.precipIters; it++) {
+    // evaporation: water cells are moisture sources (temperature-dependent)
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        if (cells[r][c] === 0) M[r][c] = Math.min(p.maxMoist, M[r][c] + evapOf(T[r][c]));
+    // advect moisture downwind; precipitate during transport + locally
+    const nM = grid2d(0);
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const m = M[r][c];
+        if (m <= 1e-4) continue;
+        const mag = Math.hypot(U[r][c], V[r][c]) || 1;
+        const du = U[r][c] / mag, dv = V[r][c] / mag;
+        const targets = [
+          { dr: dv,      dc: du,      w: 0.70 },   // main: downwind
+          { dr: dv - du, dc: du + dv, w: 0.15 },   // shoulder cells
+          { dr: dv + du, dc: du - dv, w: 0.15 },
+        ];
+        const stay = 1 - p.flow;
+        nM[r][c] += m * stay;
+        // local (convective) precipitation from moisture held over a cell
+        P[r][c] += m * stay * p.localPrecip * (0.3 + 0.7 * tempNorm(T[r][c]));
+        for (const t of targets) {
+          const tr = clampR(Math.round(r + t.dr));
+          const tc = wrapC(Math.round(c + t.dc));
+          const moved = m * p.flow * t.w;
+          // orographic/thermal rain: cooling into a colder cell wrings out moisture
+          const dT = T[r][c] - T[tr][tc];
+          const frac = Math.min(0.9, p.orographic * Math.max(0, dT) * 0.05 + p.baseRain);
+          const rain = moved * frac;
+          P[tr][tc] += rain;
+          nM[tr][tc] += moved - rain;
+        }
+      }
+    }
+    M = nM;
+  }
+  // scale raw precipitation to a cm/yr range for Whittaker classification
+  const Pcm = grid2d(0);
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      Pcm[r][c] = Math.min(450, P[r][c] * p.precipScale);
+  return { precip: Pcm, moisture: M };
+}
+
+// ── Step 4: discretized Whittaker biome classification ─────────────────────────
+const T_BANDS = [-13, 0, 8, 16, 24];      // °C upper edges → 6 temperature bands
+const P_BANDS = [10, 40, 100, 200, 350];  // cm/yr upper edges → 6 moisture bands
+const WHITTAKER = [
+  // dryness →  v.dry         dry            semi-arid       mesic               wet                  v.wet
+  ['ice_cap',     'ice_cap',     'ice_cap',      'ice_cap',          'ice_cap',           'ice_cap'           ], // T < -13
+  ['tundra',      'tundra',      'tundra',       'tundra',           'taiga',             'taiga'             ], // -13..0
+  ['cold_desert', 'steppe',      'taiga',        'taiga',            'boreal_forest',     'boreal_forest'     ], //   0..8
+  ['cold_desert', 'steppe',      'grassland',    'deciduous_forest', 'deciduous_forest',  'temperate_rainforest'], //  8..16
+  ['desert',      'shrubland',   'grassland',    'deciduous_forest', 'deciduous_forest',  'temperate_rainforest'], // 16..24
+  ['desert',      'savanna',     'savanna',      'tropical_forest',  'tropical_forest',   'rainforest'        ], // T ≥ 24
+];
+const bandIdx = (v, edges) => { let i = 0; while (i < edges.length && v >= edges[i]) i++; return i; };
+function classify(tC, pCm) { return WHITTAKER[bandIdx(tC, T_BANDS)][bandIdx(pCm, P_BANDS)]; }
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  Climate parameters  (UI-driven)
+// ══════════════════════════════════════════════════════════════════════════════
+const PARAM_GROUPS = [
+  { title: 'Temperature', note: 'sine latitude gradient + height falloff', items: [
+    { id: 'tempMode',    label: 'Mode',        type: 'select', val: 'sine',
+      options: [['sine', 'Sine (latitude)'], ['bilinear', 'Bilinear (corners)']] },
+    { id: 'equatorTemp', label: 'Equator °C',  type: 'range', min: 10,  max: 45,  step: 1,   val: 30 },
+    { id: 'poleTemp',    label: 'Pole °C',     type: 'range', min: -45, max: 5,   step: 1,   val: -25 },
+    { id: 'lapse',       label: 'Peak falloff °C', type: 'range', min: 0, max: 50, step: 1,  val: 32 },
+    { id: 'cornerTempN', label: 'Bilinear N °C', type: 'range', min: -45, max: 45, step: 1,  val: -10 },
+    { id: 'cornerTempS', label: 'Bilinear S °C', type: 'range', min: -45, max: 45, step: 1,  val: 28 },
+  ]},
+  { title: 'Wind', note: 'corner-forced semi-Lagrangian field', items: [
+    { id: 'windNW', label: 'NW corner °',  type: 'range', min: 0, max: 359, step: 5, val: 350 },
+    { id: 'windNE', label: 'NE corner °',  type: 'range', min: 0, max: 359, step: 5, val: 350 },
+    { id: 'windSW', label: 'SW corner °',  type: 'range', min: 0, max: 359, step: 5, val: 195 },
+    { id: 'windSE', label: 'SE corner °',  type: 'range', min: 0, max: 359, step: 5, val: 195 },
+    { id: 'windIters',   label: 'Iterations',  type: 'range', min: 0, max: 40, step: 1,    val: 14 },
+    { id: 'persistence', label: 'Persistence',  type: 'range', min: 0, max: 1, step: 0.05, val: 0.3 },
+    { id: 'turbulence',  label: 'Turbulence',   type: 'range', min: 0, max: 1.5, step: 0.05, val: 0.5 },
+    { id: 'seed',        label: 'Seed',         type: 'number', val: 1337 },
+  ]},
+  { title: 'Precipitation', note: 'evaporation + advection + orographic rain', items: [
+    { id: 'evapMode',  label: 'Evaporation', type: 'select', val: 'exponential',
+      options: [['exponential', 'Exponential'], ['linear', 'Linear']] },
+    { id: 'evapRate',    label: 'Evap. rate',  type: 'range', min: 0.05, max: 1,   step: 0.05, val: 0.35 },
+    { id: 'precipIters', label: 'Iterations',  type: 'range', min: 10,   max: 200, step: 5,    val: 120 },
+    { id: 'flow',        label: 'Wind flow',   type: 'range', min: 0.2,  max: 0.95, step: 0.05, val: 0.7 },
+    { id: 'orographic',  label: 'Orographic',  type: 'range', min: 0,    max: 3,   step: 0.1,  val: 1.0 },
+    { id: 'baseRain',    label: 'Base rain',   type: 'range', min: 0,    max: 0.2, step: 0.005, val: 0.035 },
+    { id: 'localPrecip', label: 'Convective',  type: 'range', min: 0,    max: 0.3, step: 0.01, val: 0.06 },
+    { id: 'precipScale', label: 'Precip scale', type: 'range', min: 2,   max: 40,  step: 1,    val: 12 },
+  ]},
 ];
 
+function buildControls() {
+  const host = document.getElementById('param-groups');
+  host.innerHTML = PARAM_GROUPS.map(g => `
+    <div class="pgroup">
+      <div class="pgroup-title">${g.title} <small>${g.note}</small></div>
+      ${g.items.map(it => renderCtrl(it)).join('')}
+    </div>`).join('');
+  // wire range value labels
+  PARAM_GROUPS.flatMap(g => g.items).forEach(it => {
+    if (it.type === 'range') {
+      const el = document.getElementById('p-' + it.id);
+      const out = document.getElementById('v-' + it.id);
+      el.addEventListener('input', () => { out.textContent = el.value; });
+    }
+  });
+}
+function renderCtrl(it) {
+  if (it.type === 'select') {
+    return `<div class="ctrl"><span class="lbl">${it.label}</span>
+      <select id="p-${it.id}">${it.options.map(o =>
+        `<option value="${o[0]}"${o[0] === it.val ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></div>`;
+  }
+  if (it.type === 'number') {
+    return `<div class="ctrl"><span class="lbl">${it.label}</span>
+      <input type="number" id="p-${it.id}" value="${it.val}"></div>`;
+  }
+  return `<div class="ctrl"><span class="lbl">${it.label}</span>
+    <input type="range" id="p-${it.id}" min="${it.min}" max="${it.max}" step="${it.step}" value="${it.val}">
+    <span class="val" id="v-${it.id}">${it.val}</span></div>`;
+}
+const pv = id => document.getElementById('p-' + id).value;
+const pn = id => parseFloat(pv(id));
+
+function getParams() {
+  return {
+    tempMode: pv('tempMode'),
+    equatorTemp: pn('equatorTemp'), poleTemp: pn('poleTemp'), lapse: pn('lapse'),
+    cornerTemps: [pn('cornerTempN'), pn('cornerTempN'), pn('cornerTempS'), pn('cornerTempS')],
+    windCorners: [pn('windNW'), pn('windNE'), pn('windSW'), pn('windSE')],
+    windSpeed: 1, windIters: pn('windIters'), persistence: pn('persistence'),
+    turbulence: pn('turbulence'), seed: pn('seed') | 0,
+    evapMode: pv('evapMode'), evapRate: pn('evapRate'), maxMoist: 3.0,
+    precipIters: pn('precipIters'), flow: pn('flow'), orographic: pn('orographic'),
+    baseRain: pn('baseRain'), localPrecip: pn('localPrecip'), precipScale: pn('precipScale'),
+  };
+}
+function setParam(id, val) {
+  const el = document.getElementById('p-' + id);
+  if (!el) return;
+  el.value = val;
+  const out = document.getElementById('v-' + id);
+  if (out) out.textContent = val;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  Generation
+// ══════════════════════════════════════════════════════════════════════════════
+function generateBiomes() {
+  const p = getParams();
+  elevGrid = computeElevation(p);
+  tempGrid = computeTemperature(elevGrid, p);
+  const wind = computeWind(p);
+  windU = wind.U; windV = wind.V;
+  const pr = computePrecip(tempGrid, windU, windV, p);
+  precipGrid = pr.precip; moistGrid = pr.moisture;
+
+  biomeGrid = Array.from({ length: ROWS }, () => new Array(COLS).fill('ocean'));
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (cells[r][c] !== 0)
+        biomeGrid[r][c] = classify(tempGrid[r][c], precipGrid[r][c]);
+
+  render();
+  buildLegend();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  Biome palette / names
+// ══════════════════════════════════════════════════════════════════════════════
 const BIOME_COLORS = {
   ocean:                '#1a5e90',
+  ice_cap:              '#e6f3fa',
+  tundra:               '#9fb09a',
+  taiga:                '#3f6b54',
+  boreal_forest:        '#2f5d4a',
+  cold_desert:          '#c2bda0',
+  steppe:               '#cdbd72',
+  grassland:            '#86c84a',
+  shrubland:            '#9aa24e',
+  deciduous_forest:     '#4f8a36',
+  temperate_rainforest: '#2c7a56',
   desert:               '#f0d888',
-  savanna:              '#c8b840',
-  tropical_forest:      '#2a9020',
-  rainforest:           '#0a6800',
-  shrubland:            '#8a9848',
-  grassland:            '#7cc840',
-  deciduous_forest:     '#4a8030',
-  temperate_rainforest: '#2a7850',
-  cold_desert:          '#bab8a0',
-  steppe:               '#c8b86a',
-  boreal_forest:        '#387060',
-  tundra:               '#9aaa80',
-  taiga:                '#2c5840',
-  ice_cap:              '#daf0f8',
-  // raw terrain (no biomes generated yet)
+  savanna:              '#cdbb46',
+  tropical_forest:      '#2a9622',
+  rainforest:           '#0c7a06',
   _land:     '#5a8840',
   _mountain: '#857060',
 };
-
 const BIOME_NAMES = {
-  ocean:                'Ocean',
-  desert:               'Desert',
-  savanna:              'Savanna',
-  tropical_forest:      'Tropical Forest',
-  rainforest:           'Rainforest',
-  shrubland:            'Shrubland',
-  grassland:            'Grassland',
-  deciduous_forest:     'Deciduous Forest',
-  temperate_rainforest: 'Temperate Rainforest',
-  cold_desert:          'Cold Desert',
-  steppe:               'Steppe',
-  boreal_forest:        'Boreal Forest',
-  tundra:               'Tundra',
-  taiga:                'Taiga',
-  ice_cap:              'Ice Cap',
+  ocean: 'Ocean', ice_cap: 'Ice Cap', tundra: 'Tundra', taiga: 'Taiga',
+  boreal_forest: 'Boreal Forest', cold_desert: 'Cold Desert', steppe: 'Steppe',
+  grassland: 'Grassland', shrubland: 'Shrubland', deciduous_forest: 'Temperate Forest',
+  temperate_rainforest: 'Temperate Rainforest', desert: 'Desert', savanna: 'Savanna',
+  tropical_forest: 'Tropical Seasonal Forest', rainforest: 'Tropical Rainforest',
 };
+// legend order roughly cold→hot
+const LEGEND_ORDER = ['ice_cap','tundra','taiga','boreal_forest','cold_desert','steppe',
+  'grassland','shrubland','deciduous_forest','temperate_rainforest','desert','savanna',
+  'tropical_forest','rainforest','ocean'];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function rowToLat(r) {
-  // center of row r in degrees N (positive = north)
-  return 90 - (r + 0.5) * (180 / ROWS);
+// ── Colour ramps for the field views ─────────────────────────────────────────
+function hexLerp(a, b, t) {
+  const ah = parseInt(a.slice(1), 16), bh = parseInt(b.slice(1), 16);
+  const ar = ah >> 16, ag = (ah >> 8) & 255, ab = ah & 255;
+  const br = bh >> 16, bg = (bh >> 8) & 255, bb = bh & 255;
+  const r = Math.round(lerp(ar, br, t)), g = Math.round(lerp(ag, bg, t)), b2 = Math.round(lerp(ab, bb, t));
+  return `rgb(${r},${g},${b2})`;
 }
-
-function tempIndex(absLat) {
-  if (absLat <= 20) return 0;
-  if (absLat <= 40) return 1;
-  if (absLat <= 60) return 2;
-  if (absLat <= 75) return 3;
-  return 4;
+function rampColor(stops, t) {
+  t = clamp01(t);
+  const n = stops.length - 1, x = t * n, i = Math.min(n - 1, Math.floor(x));
+  return hexLerp(stops[i], stops[i + 1], x - i);
 }
+const TEMP_STOPS   = ['#2b4a8c', '#3d8fc4', '#46c0b0', '#8fd24a', '#f0d24a', '#e07a2a', '#c0291a'];
+const PRECIP_STOPS = ['#d8c690', '#c7c25e', '#7fb84a', '#2f9a6a', '#1f7fae', '#163e86'];
+const ELEV_STOPS   = ['#3f7a3a', '#7a9540', '#b8a85e', '#cdbfa0', '#ffffff'];
+const tempColor   = t => rampColor(TEMP_STOPS, (t + 30) / 65);     // -30..35 °C
+const precipColor = p => rampColor(PRECIP_STOPS, p / 450);          // 0..450 cm
+const elevColor   = e => rampColor(ELEV_STOPS, e);                  // 0..1
 
-function baseMoisture(absLat) {
-  if (absLat <= 10) return 4;  // ITCZ – very wet
-  if (absLat <= 30) return 0;  // Subtropical high – very dry
-  if (absLat <= 60) return 2;  // Westerlies – moderate
-  if (absLat <= 75) return 3;  // Subpolar low – wet
-  return 0;                     // Polar high – very dry
-}
-
-// ── Wind direction ────────────────────────────────────────────────────────────
-// Returns column step: +1 = blows eastward (westerlies), -1 = blows westward
-function windDir(r) {
-  const a = Math.abs(rowToLat(r));
-  if (a <= 30) return -1;  // trade winds – westward
-  if (a <= 60) return  1;  // westerlies  – eastward
-  return -1;               // polar easterlies – westward
-}
-
-// ── Coast distance (BFS from every ocean cell) ───────────────────────────────
-function computeCoastDist() {
-  const dist  = Array.from({ length: ROWS }, () => new Uint16Array(COLS).fill(9999));
-  const queue = [];
-  for (let r = 0; r < ROWS; r++)
-    for (let c = 0; c < COLS; c++)
-      if (grid[r][c] === 0) { dist[r][c] = 0; queue.push(r * COLS + c); }
-  const DIRS = [[-1,0],[1,0],[0,-1],[0,1]];
-  for (let i = 0; i < queue.length; i++) {
-    const idx = queue[i], r = (idx / COLS) | 0, c = idx % COLS, d = dist[r][c];
-    for (const [dr, dc] of DIRS) {
-      const nr = r + dr, nc = c + dc;
-      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && dist[nr][nc] === 9999) {
-        dist[nr][nc] = d + 1;
-        queue.push(nr * COLS + nc);
-      }
-    }
-  }
-  return dist;
-}
-
-// ── Rain shadow (applied per row in wind direction) ───────────────────────────
-function applyRainShadow(r, moistRow) {
-  const dc = windDir(r);
-  const start = dc === 1 ? 0 : COLS - 1;
-  const end   = dc === 1 ? COLS : -1;
-  let shadow = 0;
-  for (let c = start; c !== end; c += dc) {
-    if (grid[r][c] === 0) {
-      shadow = 0;                          // ocean – reset
-    } else if (grid[r][c] === 2) {
-      shadow = Math.max(shadow, 2.5);      // mountain – activate/refresh shadow
-    } else {
-      moistRow[c] -= shadow;
-      shadow = Math.max(0, shadow - 0.35); // decay ~7 cells
-    }
-  }
-}
-
-// ── Canvas setup ──────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+//  Rendering
+// ══════════════════════════════════════════════════════════════════════════════
 const canvas = document.getElementById('map-canvas');
 const ctx    = canvas.getContext('2d');
 canvas.width  = COLS * CELL;
 canvas.height = ROWS * CELL;
 
-// ── Render ────────────────────────────────────────────────────────────────────
+function cellColor(r, c) {
+  const t = cells[r][c];
+  if (baseView === 'elev') {
+    if (elevGrid) return t === 0 ? BIOME_COLORS.ocean : elevColor(elevGrid[r][c]);
+    return t === 0 ? BIOME_COLORS.ocean : t === 2 ? BIOME_COLORS._mountain : BIOME_COLORS._land;
+  }
+  if (baseView === 'temp' && tempGrid)   return tempColor(tempGrid[r][c]);
+  if (baseView === 'precip' && precipGrid) return t === 0 ? '#10243a' : precipColor(precipGrid[r][c]);
+  // biomes (default)
+  if (t === 0) return BIOME_COLORS.ocean;
+  if (biomeGrid) return BIOME_COLORS[biomeGrid[r][c]] || '#888';
+  return t === 2 ? BIOME_COLORS._mountain : BIOME_COLORS._land;
+}
+
 function render() {
-  // 1. Cells
-  for (let r = 0; r < ROWS; r++) {
+  for (let r = 0; r < ROWS; r++)
     for (let c = 0; c < COLS; c++) {
-      const t = grid[r][c];
-      let color;
-      if (t === 0) {
-        color = BIOME_COLORS.ocean;
-      } else if (biomeGrid) {
-        color = BIOME_COLORS[biomeGrid[r][c]] || '#888';
-      } else {
-        color = t === 2 ? BIOME_COLORS._mountain : BIOME_COLORS._land;
-      }
-      ctx.fillStyle = color;
+      ctx.fillStyle = cellColor(r, c);
       ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
     }
-  }
 
-  // 2. Mountain icons
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      if (grid[r][c] === 2) drawMountain(r, c);
-    }
-  }
+  if (baseView === 'biomes' || baseView === 'elev')
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        if (cells[r][c] === 2) drawMountain(r, c);
 
-  // 3. Overlays (order matters: moisture → lat lines → wind arrows)
-  if (document.getElementById('chk-moist').checked)  drawMoistureOverlay();
-  if (document.getElementById('chk-lat').checked)    drawLatLines();
-  if (document.getElementById('chk-wind').checked)   drawWindArrows();
+  if (document.getElementById('chk-lat').checked)  drawLatLines();
+  if (document.getElementById('chk-wind').checked) drawWindField();
+  updateRampBar();
 }
 
 function drawMountain(r, c) {
-  const x = c * CELL, y = r * CELL;
-  const w = CELL - 1, h = CELL - 1;
+  const x = c * CELL, y = r * CELL, w = CELL - 1, h = CELL - 1;
   ctx.fillStyle = '#4e4232';
   ctx.beginPath();
-  ctx.moveTo(x + w / 2, y + 1);
-  ctx.lineTo(x + w,     y + h);
-  ctx.lineTo(x,         y + h);
-  ctx.closePath();
-  ctx.fill();
+  ctx.moveTo(x + w / 2, y + 1); ctx.lineTo(x + w, y + h); ctx.lineTo(x, y + h); ctx.closePath(); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.82)';
   ctx.beginPath();
-  ctx.moveTo(x + w / 2,         y + 1);
+  ctx.moveTo(x + w / 2, y + 1);
   ctx.lineTo(x + w / 2 + w / 6, y + h * 0.38);
   ctx.lineTo(x + w / 2 - w / 6, y + h * 0.38);
-  ctx.closePath();
-  ctx.fill();
+  ctx.closePath(); ctx.fill();
 }
 
 const LAT_MARKS = [
-  { lat:  75, label: '75°N', style: 'normal'  },
-  { lat:  60, label: '60°N', style: 'normal'  },
-  { lat:  30, label: '30°N', style: 'normal'  },
-  { lat:  10, label: '10°N', style: 'dashed'  },
-  { lat:   0, label: 'Equator',   style: 'equator' },
-  { lat: -10, label: '10°S', style: 'dashed'  },
-  { lat: -30, label: '30°S', style: 'normal'  },
-  { lat: -60, label: '60°S', style: 'normal'  },
-  { lat: -75, label: '75°S', style: 'normal'  },
+  { lat: 75, label: '75°N' }, { lat: 60, label: '60°N' }, { lat: 30, label: '30°N' },
+  { lat: 10, label: '10°N', d: 1 }, { lat: 0, label: 'Equator', eq: 1 }, { lat: -10, label: '10°S', d: 1 },
+  { lat: -30, label: '30°S' }, { lat: -60, label: '60°S' }, { lat: -75, label: '75°S' },
 ];
-
 function drawLatLines() {
   ctx.save();
   ctx.font = '9px monospace';
   ctx.textBaseline = 'bottom';
-  for (const { lat, label, style } of LAT_MARKS) {
-    const y = (90 - lat) / 180 * canvas.height;
-    if (style === 'equator') {
-      ctx.strokeStyle = 'rgba(255,80,80,0.65)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([]);
-    } else if (style === 'dashed') {
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 4]);
-    } else {
-      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([]);
-    }
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
-    ctx.stroke();
-    ctx.fillStyle = style === 'equator'
-      ? 'rgba(255,120,120,0.9)'
-      : 'rgba(255,255,255,0.7)';
-    ctx.fillText(label, 4, y - 2);
+  for (const m of LAT_MARKS) {
+    const y = (90 - m.lat) / 180 * canvas.height;
+    if (m.eq)      { ctx.strokeStyle = 'rgba(255,80,80,0.65)'; ctx.lineWidth = 1.5; ctx.setLineDash([]); }
+    else if (m.d)  { ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([3, 4]); }
+    else           { ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1; ctx.setLineDash([]); }
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+    ctx.fillStyle = m.eq ? 'rgba(255,120,120,0.9)' : 'rgba(255,255,255,0.7)';
+    ctx.fillText(m.label, 4, y - 2);
   }
   ctx.setLineDash([]);
   ctx.restore();
 }
 
-// ── Moisture overlay ──────────────────────────────────────────────────────────
-function drawMoistureOverlay() {
-  if (!moistureGrid) return;
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      if (grid[r][c] !== 0) {
-        const alpha = (moistureGrid[r][c] / 4) * 0.55;
-        ctx.fillStyle = `rgba(20,90,230,${alpha.toFixed(3)})`;
-        ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
-      }
-    }
-  }
-}
-
-// ── Wind arrows overlay ───────────────────────────────────────────────────────
-function drawWindArrows() {
-  const STEP_R = 6, STEP_C = 9;
+// wind field arrows sampled from the simulated vector field
+function drawWindField() {
+  if (!windU) return;
+  const STEP = 6;
   ctx.save();
-  for (let r = (STEP_R / 2) | 0; r < ROWS; r += STEP_R) {
-    const dc = windDir(r);
-    for (let c = (STEP_C / 2) | 0; c < COLS; c += STEP_C) {
-      const cx = (c + 0.5) * CELL;
-      const cy = (r + 0.5) * CELL;
-      const len = CELL * 2.8;
-      const col = 'rgba(190,230,255,0.60)';
-      ctx.strokeStyle = col;
-      ctx.fillStyle   = col;
-      ctx.lineWidth   = 1.5;
-      // shaft
+  for (let r = (STEP / 2) | 0; r < ROWS; r += STEP) {
+    for (let c = (STEP / 2) | 0; c < COLS; c += STEP) {
+      const u = windU[r][c], v = windV[r][c];
+      const ang = Math.atan2(v, u);
+      const cx = (c + 0.5) * CELL, cy = (r + 0.5) * CELL, len = CELL * 2.6;
+      const ex = cx + Math.cos(ang) * len / 2, ey = cy + Math.sin(ang) * len / 2;
+      const sx = cx - Math.cos(ang) * len / 2, sy = cy - Math.sin(ang) * len / 2;
+      ctx.strokeStyle = 'rgba(220,238,255,0.62)';
+      ctx.fillStyle   = 'rgba(220,238,255,0.62)';
+      ctx.lineWidth   = 1.4;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+      const hs = 3.4;
       ctx.beginPath();
-      ctx.moveTo(cx - dc * len / 2, cy);
-      ctx.lineTo(cx + dc * len / 2, cy);
-      ctx.stroke();
-      // arrowhead
-      const hx = cx + dc * len / 2, hs = 3.5;
-      ctx.beginPath();
-      ctx.moveTo(hx, cy);
-      ctx.lineTo(hx - dc * hs * 1.6, cy - hs);
-      ctx.lineTo(hx - dc * hs * 1.6, cy + hs);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(ex - Math.cos(ang - 0.5) * hs * 1.8, ey - Math.sin(ang - 0.5) * hs * 1.8);
+      ctx.lineTo(ex - Math.cos(ang + 0.5) * hs * 1.8, ey - Math.sin(ang + 0.5) * hs * 1.8);
+      ctx.closePath(); ctx.fill();
     }
   }
   ctx.restore();
 }
 
-// ── Biome generation (Stage 2: latitude + coastal bonus + rain shadow) ─────────
-function generateBiomes() {
-  const coastDist = computeCoastDist();
-
-  // Start with latitude base moisture per row
-  const moist = Array.from({ length: ROWS }, (_, r) => {
-    const bm = baseMoisture(Math.abs(rowToLat(r)));
-    return new Float32Array(COLS).fill(bm);
-  });
-
-  // Coastal bonus: exponential decay from nearest ocean cell
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const d = coastDist[r][c];
-      if (d > 0) moist[r][c] += 1.5 * Math.exp(-0.5 * (d - 1));
-    }
-  }
-
-  // Rain shadow from mountains
-  for (let r = 0; r < ROWS; r++) applyRainShadow(r, moist[r]);
-
-  // Clamp and store moisture for overlay use in Stage 3
-  moistureGrid = moist.map(row =>
-    Float32Array.from(row, v => Math.max(0, Math.min(4, v)))
-  );
-
-  // Assign biomes
-  biomeGrid = Array.from({ length: ROWS }, () => new Array(COLS).fill('ocean'));
-  for (let r = 0; r < ROWS; r++) {
-    const ti = tempIndex(Math.abs(rowToLat(r)));
-    for (let c = 0; c < COLS; c++) {
-      if (grid[r][c] !== 0) {
-        const mi = Math.min(4, Math.max(0, Math.round(moistureGrid[r][c])));
-        biomeGrid[r][c] = BIOME_TABLE[ti][mi];
-      }
-    }
-  }
-
-  render();
-  buildLegend();
+function updateRampBar() {
+  const bar = document.getElementById('ramp-bar');
+  const grad = (stops) => `linear-gradient(to right, ${stops.join(',')})`;
+  if (baseView === 'temp')
+    bar.innerHTML = `<span>−30°C</span><div class="ramp" style="background:${grad(TEMP_STOPS)}"></div><span>+35°C</span>`;
+  else if (baseView === 'precip')
+    bar.innerHTML = `<span>0 cm/yr</span><div class="ramp" style="background:${grad(PRECIP_STOPS)}"></div><span>450 cm/yr</span>`;
+  else if (baseView === 'elev')
+    bar.innerHTML = `<span>sea level</span><div class="ramp" style="background:${grad(ELEV_STOPS)}"></div><span>peak</span>`;
+  else
+    bar.innerHTML = '';
 }
 
-// ── Legend ────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+//  Legend
+// ══════════════════════════════════════════════════════════════════════════════
 function buildLegend() {
   const used = new Set();
-  if (biomeGrid) {
+  if (biomeGrid)
     for (let r = 0; r < ROWS; r++)
-      for (let c = 0; c < COLS; c++)
-        used.add(biomeGrid[r][c]);
-  }
-  const el = document.getElementById('legend');
-  el.innerHTML = Object.entries(BIOME_NAMES).map(([key, name]) => {
+      for (let c = 0; c < COLS; c++) used.add(biomeGrid[r][c]);
+  document.getElementById('legend').innerHTML = LEGEND_ORDER.map(key => {
     const dim = biomeGrid && !used.has(key) ? ' dim' : '';
     return `<div class="legend-item${dim}">
       <div class="swatch" style="background:${BIOME_COLORS[key]}"></div>
-      <span>${name}</span>
-    </div>`;
+      <span>${BIOME_NAMES[key]}</span></div>`;
   }).join('');
 }
 
-// ── Painting ──────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+//  Painting
+// ══════════════════════════════════════════════════════════════════════════════
 function paintAt(r, c) {
   if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
-  const t = currentTool;
-  if (t === 'mountain') {
-    // Auto-fill ~2-cell radius with land so mountains always sit on land
+  if (currentTool === 'mountain') {
     const fill = 2;
-    for (let dr = -fill; dr <= fill; dr++) {
-      for (let dc = -fill; dc <= fill; dc++) {
+    for (let dr = -fill; dr <= fill; dr++)
+      for (let dc = -fill; dc <= fill; dc++)
         if (dr * dr + dc * dc <= fill * fill) {
           const nr = r + dr, nc = c + dc;
-          if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && grid[nr][nc] === 0)
-            grid[nr][nc] = 1;
+          if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && cells[nr][nc] === 0) cells[nr][nc] = 1;
         }
-      }
-    }
-    grid[r][c] = 2;
+    cells[r][c] = 2;
   } else {
-    grid[r][c] = t === 'land' ? 1 : 0;
+    cells[r][c] = currentTool === 'land' ? 1 : 0;
   }
 }
-
 function applyBrush(row, col) {
-  if (brushRadius === 0) {
-    paintAt(row, col);
-  } else {
-    const br = brushRadius;
-    for (let dr = -br; dr <= br; dr++) {
-      for (let dc = -br; dc <= br; dc++) {
-        if (dr * dr + dc * dc <= br * br) paintAt(row + dr, col + dc);
-      }
-    }
-  }
-  biomeGrid = null;
+  if (brushRadius === 0) paintAt(row, col);
+  else for (let dr = -brushRadius; dr <= brushRadius; dr++)
+    for (let dc = -brushRadius; dc <= brushRadius; dc++)
+      if (dr * dr + dc * dc <= brushRadius * brushRadius) paintAt(row + dr, col + dc);
+  invalidate();
+}
+function invalidate() {
+  // painting changes terrain → previous climate results are stale
+  elevGrid = tempGrid = precipGrid = moistGrid = windU = windV = biomeGrid = null;
   render();
 }
-
 function cellAt(e) {
   const rect = canvas.getBoundingClientRect();
-  return {
-    r: Math.floor((e.clientY - rect.top)  / CELL),
-    c: Math.floor((e.clientX - rect.left) / CELL),
-  };
+  return { r: Math.floor((e.clientY - rect.top) / CELL), c: Math.floor((e.clientX - rect.left) / CELL) };
 }
-
-canvas.addEventListener('mousedown', e => {
-  e.preventDefault();
-  isPainting = true;
-  const { r, c } = cellAt(e);
-  applyBrush(r, c);
-});
+canvas.addEventListener('mousedown', e => { e.preventDefault(); isPainting = true; const { r, c } = cellAt(e); applyBrush(r, c); });
 canvas.addEventListener('mousemove', e => {
   const { r, c } = cellAt(e);
-  if (isPainting) {
-    tooltip.style.display = 'none';
-    applyBrush(r, c);
-  } else {
-    showTooltip(e, r, c);
-  }
+  if (isPainting) { tooltip.style.display = 'none'; applyBrush(r, c); }
+  else showTooltip(e, r, c);
 });
 window.addEventListener('mouseup', () => { isPainting = false; });
-canvas.addEventListener('mouseleave', () => {
-  isPainting = false;
-  tooltip.style.display = 'none';
-});
+canvas.addEventListener('mouseleave', () => { isPainting = false; tooltip.style.display = 'none'; });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-// ── Tooltip ───────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+//  Tooltip
+// ══════════════════════════════════════════════════════════════════════════════
 const tooltip = document.getElementById('tooltip');
-
-const TEMP_NAMES  = ['Hot', 'Warm', 'Cool', 'Cold', 'Polar'];
-const MOIST_NAMES = ['Very Dry', 'Dry', 'Moderate', 'Wet', 'Very Wet'];
-
 function showTooltip(e, r, c) {
-  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) {
-    tooltip.style.display = 'none';
-    return;
-  }
-  const t   = grid[r][c];
-  const lat = rowToLat(r);
-  const latStr = lat >= 0
-    ? `${lat.toFixed(1)}°N`
-    : `${(-lat).toFixed(1)}°S`;
-
-  const lines = [`<b>Lat:</b> ${latStr}`];
-  lines.push(`<b>Terrain:</b> ${t === 0 ? 'Ocean' : t === 2 ? 'Mountain' : 'Land'}`);
-
-  if (t !== 0) {
-    const ti = tempIndex(Math.abs(lat));
-    lines.push(`<b>Temp:</b> ${TEMP_NAMES[ti]}`);
-    if (moistureGrid) {
-      const m  = moistureGrid[r][c];
-      const mi = Math.min(4, Math.max(0, Math.round(m)));
-      lines.push(`<b>Moisture:</b> ${MOIST_NAMES[mi]} (${m.toFixed(1)})`);
-    }
-    if (biomeGrid) {
-      const key = biomeGrid[r][c];
-      lines.push(`<b>Biome:</b> ${BIOME_NAMES[key] || key}`);
-    }
-  }
-
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) { tooltip.style.display = 'none'; return; }
+  const t = cells[r][c], lat = rowToLat(r);
+  const latStr = lat >= 0 ? `${lat.toFixed(1)}°N` : `${(-lat).toFixed(1)}°S`;
+  const lines = [`<b>Lat:</b> ${latStr}`,
+    `<b>Terrain:</b> ${t === 0 ? 'Ocean' : t === 2 ? 'Mountain' : 'Land'}`];
+  if (elevGrid) lines.push(`<b>Elevation:</b> ${(elevGrid[r][c]).toFixed(2)}`);
+  if (tempGrid) lines.push(`<b>Temp:</b> ${tempGrid[r][c].toFixed(1)} °C`);
+  if (precipGrid && t !== 0) lines.push(`<b>Precip:</b> ${precipGrid[r][c].toFixed(0)} cm/yr`);
+  if (biomeGrid && t !== 0) lines.push(`<b>Biome:</b> ${BIOME_NAMES[biomeGrid[r][c]] || biomeGrid[r][c]}`);
   tooltip.innerHTML = lines.join('<br>');
   tooltip.style.display = 'block';
-  const tx = Math.min(e.clientX + 16, window.innerWidth  - 220);
-  const ty = Math.max(e.clientY - 12, 4);
-  tooltip.style.left = tx + 'px';
-  tooltip.style.top  = ty + 'px';
+  tooltip.style.left = Math.min(e.clientX + 16, window.innerWidth - 220) + 'px';
+  tooltip.style.top  = Math.max(e.clientY - 12, 4) + 'px';
 }
 
-// ── Tool / brush controls ─────────────────────────────────────────────────────
-const TOOLS   = ['land', 'water', 'mountain', 'erase'];
+// ══════════════════════════════════════════════════════════════════════════════
+//  Controls
+// ══════════════════════════════════════════════════════════════════════════════
+const TOOLS = ['land', 'water', 'mountain', 'erase'];
 const BRUSHES = { s: 0, m: 2, l: 4 };
+const VIEWS = ['biomes', 'temp', 'precip', 'elev'];
 
 function setTool(tool) {
   currentTool = tool;
-  TOOLS.forEach(t =>
-    document.getElementById('btn-' + t).classList.toggle('active', t === tool)
-  );
+  TOOLS.forEach(t => document.getElementById('btn-' + t).classList.toggle('active', t === tool));
 }
-
 function setBrush(size) {
   brushRadius = BRUSHES[size];
-  Object.keys(BRUSHES).forEach(s =>
-    document.getElementById('btn-' + s).classList.toggle('active', s === size)
-  );
+  Object.keys(BRUSHES).forEach(s => document.getElementById('btn-' + s).classList.toggle('active', s === size));
 }
-
-function clearMap() {
-  for (const row of grid) row.fill(0);
-  biomeGrid    = null;
-  moistureGrid = null;
+function setView(v) {
+  baseView = v;
+  VIEWS.forEach(x => document.getElementById('view-' + x).classList.toggle('active', x === v));
   render();
+}
+function toggleParams() {
+  const open = document.getElementById('params-panel').classList.toggle('open');
+  document.getElementById('btn-params').textContent = 'Climate Parameters ' + (open ? '▴' : '▾');
+}
+function clearMap() {
+  for (const row of cells) row.fill(0);
+  invalidate();
   buildLegend();
 }
 
-// ── Export PNG ────────────────────────────────────────────────────────────────
-function exportPNG() {
-  // Re-render without overlays for a clean export, then restore
-  const latOn   = document.getElementById('chk-lat').checked;
-  const windOn  = document.getElementById('chk-wind').checked;
-  const moistOn = document.getElementById('chk-moist').checked;
-  document.getElementById('chk-lat').checked   = false;
-  document.getElementById('chk-wind').checked  = false;
-  document.getElementById('chk-moist').checked = false;
-  render();
+// a ready-made world so the algorithm can be demonstrated immediately
+function exampleMap() {
+  for (const row of cells) row.fill(0);
+  for (let r = 0; r < ROWS; r++) {
+    const lat = rowToLat(r);
+    for (let c = 0; c < COLS; c++) {
+      // main continent straddling the equator (tropical → temperate)
+      if (c > 26 && c < 94 && lat < 46 && lat > -40) cells[r][c] = 1;
+      // a northern landmass (boreal/tundra)
+      if (c > 74 && c < 122 && lat > 44 && lat < 66) cells[r][c] = 1;
+      // an island chain in the east
+      if (((c - 118) ** 2 + (r - 42) ** 2) < 30) cells[r][c] = 1;
+    }
+  }
+  // a N–S coastal mountain range on the continent's west side (rain-shadow demo)
+  for (let r = 0; r < ROWS; r++) {
+    const lat = rowToLat(r);
+    if (lat < 44 && lat > -36 && cells[r][35]) { cells[r][35] = 2; cells[r][36] = 2; }
+  }
+  invalidate();
+  buildLegend();
+  generateBiomes();
+}
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  Export / Save / Load
+// ══════════════════════════════════════════════════════════════════════════════
+function exportPNG() {
+  const lat = document.getElementById('chk-lat').checked;
+  const wind = document.getElementById('chk-wind').checked;
+  document.getElementById('chk-lat').checked = false;
+  document.getElementById('chk-wind').checked = false;
+  render();
   canvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
-    const a   = document.createElement('a');
-    a.href     = url;
-    a.download = 'climate-map.png';
-    a.click();
+    const a = document.createElement('a');
+    a.href = url; a.download = 'autobiomes-map.png'; a.click();
     URL.revokeObjectURL(url);
-
-    // Restore overlays
-    document.getElementById('chk-lat').checked   = latOn;
-    document.getElementById('chk-wind').checked  = windOn;
-    document.getElementById('chk-moist').checked = moistOn;
+    document.getElementById('chk-lat').checked = lat;
+    document.getElementById('chk-wind').checked = wind;
     render();
   }, 'image/png');
 }
 
-// ── Save / Load (localStorage) ────────────────────────────────────────────────
-const SAVE_KEY = 'fantasy-climate-map-v1';
-
+const SAVE_KEY = 'autobiomes-map-v1';
 function saveMap() {
-  // Pack grid into a compact string: each cell is one char (0/1/2)
   const flat = [];
-  for (let r = 0; r < ROWS; r++)
-    for (let c = 0; c < COLS; c++)
-      flat.push(grid[r][c]);
-  const data = { rows: ROWS, cols: COLS, grid: flat.join('') };
-  try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-    flashMsg('Map saved!');
-  } catch (e) {
-    flashMsg('Save failed (storage full?)');
-  }
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) flat.push(cells[r][c]);
+  const params = {};
+  PARAM_GROUPS.flatMap(g => g.items).forEach(it => { params[it.id] = pv(it.id); });
+  const data = { rows: ROWS, cols: COLS, grid: flat.join(''), params };
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); flashMsg('Map & parameters saved'); }
+  catch (e) { flashMsg('Save failed (storage full?)'); }
 }
-
 function loadMap() {
   const raw = localStorage.getItem(SAVE_KEY);
-  if (!raw) { flashMsg('No saved map found.'); return; }
+  if (!raw) { flashMsg('No saved map found'); return; }
   try {
     const data = JSON.parse(raw);
-    if (data.rows !== ROWS || data.cols !== COLS) {
-      flashMsg('Saved map has different dimensions — cannot load.');
-      return;
-    }
-    for (let r = 0; r < ROWS; r++)
-      for (let c = 0; c < COLS; c++)
-        grid[r][c] = Number(data.grid[r * COLS + c]) || 0;
-    biomeGrid    = null;
-    moistureGrid = null;
-    render();
+    if (data.rows !== ROWS || data.cols !== COLS) { flashMsg('Saved map has different dimensions'); return; }
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
+      cells[r][c] = Number(data.grid[r * COLS + c]) || 0;
+    if (data.params) Object.entries(data.params).forEach(([k, v]) => setParam(k, v));
+    invalidate();
     buildLegend();
-    flashMsg('Map loaded!');
-  } catch (e) {
-    flashMsg('Load failed — saved data corrupt.');
-  }
+    generateBiomes();
+    flashMsg('Map & parameters loaded');
+  } catch (e) { flashMsg('Load failed — saved data corrupt'); }
 }
-
 function flashMsg(msg) {
   const el = document.createElement('div');
   el.textContent = msg;
   Object.assign(el.style, {
-    position: 'fixed', bottom: '20px', left: '50%',
-    transform: 'translateX(-50%)',
-    background: 'rgba(10,14,24,0.92)', color: '#9dd',
-    border: '1px solid #3a5060', borderRadius: '6px',
-    padding: '8px 18px', fontSize: '0.85rem',
-    zIndex: '500', pointerEvents: 'none',
-    transition: 'opacity 0.5s',
+    position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
+    background: 'rgba(10,14,24,0.92)', color: '#9dd', border: '1px solid #3a5060',
+    borderRadius: '6px', padding: '8px 18px', fontSize: '0.85rem', zIndex: '500',
+    pointerEvents: 'none', transition: 'opacity 0.5s',
   });
   document.body.appendChild(el);
   setTimeout(() => { el.style.opacity = '0'; }, 1600);
   setTimeout(() => el.remove(), 2200);
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+//  Init
+// ══════════════════════════════════════════════════════════════════════════════
+buildControls();
 buildLegend();
-render();
+exampleMap();   // start with a generated example world
 </script>
 </body>
 </html>
