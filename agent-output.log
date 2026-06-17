@@ -1,0 +1,9 @@
+All four stages are implemented and pushed. Here's a summary of what was built:
+
+**Stage 1** — 72×144 cell canvas (2.5°/cell) with land/water/mountain/erase tools, three brush sizes, latitude-only biome generation (Hadley cell bands), mountain icons, latitude lines overlay, and full biome legend.
+
+**Stage 2** — Biome generation upgraded with a BFS coastal moisture bonus (exponential decay inland) and per-row rain shadow (prevailing wind scans leeward of mountains, decaying over ~7 cells). `moistureGrid` stored for Stage 3.
+
+**Stage 3** — Wind arrows overlay (direction reflects trade winds/westerlies/polar), moisture intensity overlay (blue tint proportional to wetness), hover tooltip (lat, terrain, temp, moisture, biome), and mountain auto-fill that places a 2-cell radius of land underneath when painting on ocean.
+
+**Stage 4** — Export PNG (renders without overlays then downloads), Save to localStorage (compact cell-type string), Load from localStorage (with dimension guard), flash message feedback.
